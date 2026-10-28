@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import re
+import time
 from zoneinfo import ZoneInfo
 import requests
 from bs4 import BeautifulSoup
@@ -21,9 +22,19 @@ USER_AGENT="PlaneBallHistoricalBackfill/1.0 (public player match logs, one-time)
 
 def get_history(pid,season):
     url=f"https://planeball.com/players/?id={pid}&mode=4BALL&season={season}"
-    with requests.Session() as session:
-        r=session.get(url,headers={"User-Agent":USER_AGENT},timeout=55)
-        r.raise_for_status()
+    last_error=None
+    for attempt in range(3):
+        try:
+            with requests.Session() as session:
+                r=session.get(url,headers={"User-Agent":USER_AGENT},timeout=(20,75+attempt*40))
+                r.raise_for_status()
+            break
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError, requests.exceptions.HTTPError) as exc:
+            last_error=exc
+            if attempt<2:
+                time.sleep(3*(attempt+1))
+    else:
+        raise RuntimeError(f"Player {pid}: three attempts exhausted: {last_error}")
     soup=BeautifulSoup(r.text,"html.parser")
     matches=[]
     found=False
